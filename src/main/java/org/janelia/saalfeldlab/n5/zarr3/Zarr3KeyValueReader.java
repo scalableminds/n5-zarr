@@ -24,7 +24,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSyntaxException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -203,7 +202,7 @@ public class Zarr3KeyValueReader implements CachedGsonKeyValueN5Reader, N5JsonCa
     gsonBuilder.registerTypeAdapter(V2ChunkKeyEncoding.class, V2ChunkKeyEncoding.jsonAdapter);
     gsonBuilder.registerTypeHierarchyAdapter(ChunkGrid.class, ChunkGrid.jsonAdapter);
     gsonBuilder.registerTypeAdapter(RegularChunkGrid.class, RegularChunkGrid.jsonAdapter);
-    gsonBuilder.registerTypeAdapter(Zarr3ArrayAttributes.class, Zarr3ArrayAttributes.jsonAdapter);
+    gsonBuilder.registerTypeAdapter(Zarr3DatasetAttributes.class, Zarr3DatasetAttributes.jsonAdapter);
     gsonBuilder.disableHtmlEscaping();
     gsonBuilder.serializeNulls();
 
@@ -363,39 +362,21 @@ public class Zarr3KeyValueReader implements CachedGsonKeyValueN5Reader, N5JsonCa
   }
 
   /**
-   * Returns the {@link Zarr3ArrayAttributes} located at the given path, if present.
-   *
-   * @param pathName the path relative to the container's root
-   * @return the zarr array attributes
-   * @throws N5Exception the exception
-   */
-  public Zarr3ArrayAttributes getArrayAttributes(final String pathName) throws N5Exception {
-
-    return getArrayAttributes(getZarrJson(pathName));
-  }
-
-  /**
-   * Constructs {@link Zarr3ArrayAttributes} from a {@link JsonElement}.
+   * Constructs {@link Zarr3DatasetAttributes} from a {@link JsonElement}.
    *
    * @param attributes the json element
    * @return the zarr array attributes
    */
-  protected Zarr3ArrayAttributes getArrayAttributes(final JsonElement attributes) {
-
-    return gson.fromJson(attributes, Zarr3ArrayAttributes.class);
-  }
-
   @Override
   public Zarr3DatasetAttributes createDatasetAttributes(final JsonElement attributes) {
 
-    final Zarr3ArrayAttributes arrayAttributes = getArrayAttributes(attributes);
-    return arrayAttributes != null ? arrayAttributes.getDatasetAttributes() : null;
+    return gson.fromJson(attributes, Zarr3DatasetAttributes.class);
   }
 
   protected String translateAttributePath(final String key) {
     String[] keyParts = getKeyValueAccess().components(key);
 
-    Stream<String> coreAttributeKeys = Stream.concat(Arrays.stream(Zarr3ArrayAttributes.allKeys),
+    Stream<String> coreAttributeKeys = Stream.concat(Arrays.stream(Zarr3DatasetAttributes.allKeys),
         Stream.of(DatasetAttributes.COMPRESSION_KEY, DatasetAttributes.BLOCK_SIZE_KEY,
             DatasetAttributes.DIMENSIONS_KEY, DatasetAttributes.DATA_TYPE_KEY));
 
@@ -471,7 +452,7 @@ public class Zarr3KeyValueReader implements CachedGsonKeyValueN5Reader, N5JsonCa
     }
 
     final JsonObject attrs = elem.getAsJsonObject();
-    final Zarr3ArrayAttributes arrayAttributes = getArrayAttributes(attrs);
+    final Zarr3DatasetAttributes arrayAttributes = createDatasetAttributes(attrs);
     if (arrayAttributes == null) {
       return elem;
     }

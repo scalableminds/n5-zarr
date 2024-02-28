@@ -237,7 +237,7 @@ public class Zarr3KeyValueWriter extends
     JsonObject chunkGridObject = new JsonObject();
     chunkGridObject.add("name", new JsonPrimitive("regular"));
     chunkGridObject.add("configuration", chunkGridConfigurationObject);
-    dest.add(Zarr3ArrayAttributes.chunkGridKey, chunkGridObject);
+    dest.add(Zarr3DatasetAttributes.chunkGridKey, chunkGridObject);
     src.remove(DatasetAttributes.BLOCK_SIZE_KEY);
   }
 
@@ -245,7 +245,7 @@ public class Zarr3KeyValueWriter extends
 
     if (src.has(DatasetAttributes.DATA_TYPE_KEY)) {
       final JsonElement e = src.get(DatasetAttributes.DATA_TYPE_KEY);
-      dest.addProperty(Zarr3ArrayAttributes.dataTypeKey,
+      dest.addProperty(Zarr3DatasetAttributes.dataTypeKey,
           new DataType(org.janelia.saalfeldlab.n5.DataType.fromString(e.getAsString())).toString());
       src.remove(DatasetAttributes.DATA_TYPE_KEY);
     }
@@ -259,9 +259,9 @@ public class Zarr3KeyValueWriter extends
       final Compression c = gson.fromJson(src.get(DatasetAttributes.COMPRESSION_KEY),
           Compression.class);
       if (c.getClass() == RawCompression.class) {
-        dest.add(Zarr3ArrayAttributes.codecsKey, JsonNull.INSTANCE);
+        dest.add(Zarr3DatasetAttributes.codecsKey, JsonNull.INSTANCE);
       } else {
-        dest.add(Zarr3ArrayAttributes.codecsKey,
+        dest.add(Zarr3DatasetAttributes.codecsKey,
             gson.toJsonTree(ZarrCodec.fromCompression(c)));
       }
 
@@ -402,7 +402,7 @@ public class Zarr3KeyValueWriter extends
 
     // These three lines are preferable to setDatasetAttributes because they
     // are more efficient wrt caching
-    final Zarr3ArrayAttributes arrayAttributes = createZarr3ArrayAttributes(datasetAttributes);
+    final Zarr3DatasetAttributes arrayAttributes = createZarr3ArrayAttributes(datasetAttributes);
     final JsonElement attributes = gson.toJsonTree(arrayAttributes.asMap());
     writeJsonResource(normalPath, ZARR_JSON_FILE, attributes);
 
@@ -416,30 +416,30 @@ public class Zarr3KeyValueWriter extends
 
   protected void translateN5Attributes(final Map<String, Object> attrs) {
     if (attrs.containsKey(DatasetAttributes.COMPRESSION_KEY)) {
-      if (!attrs.containsKey(Zarr3ArrayAttributes.codecsKey)) {
-        attrs.put(Zarr3ArrayAttributes.codecsKey, attrs.get(DatasetAttributes.COMPRESSION_KEY));
+      if (!attrs.containsKey(Zarr3DatasetAttributes.codecsKey)) {
+        attrs.put(Zarr3DatasetAttributes.codecsKey, attrs.get(DatasetAttributes.COMPRESSION_KEY));
       }
       attrs.remove(DatasetAttributes.COMPRESSION_KEY);
     }
 
     if (attrs.containsKey(DatasetAttributes.BLOCK_SIZE_KEY)) {
-      if (!attrs.containsKey(Zarr3ArrayAttributes.chunkGridKey)) {
-        attrs.put(Zarr3ArrayAttributes.chunkGridKey + "/configuration/chunk_shape",
+      if (!attrs.containsKey(Zarr3DatasetAttributes.chunkGridKey)) {
+        attrs.put(Zarr3DatasetAttributes.chunkGridKey + "/configuration/chunk_shape",
             attrs.get(DatasetAttributes.BLOCK_SIZE_KEY));
       }
       attrs.remove(DatasetAttributes.BLOCK_SIZE_KEY);
     }
 
     if (attrs.containsKey(DatasetAttributes.DIMENSIONS_KEY)) {
-      if (!attrs.containsKey(Zarr3ArrayAttributes.shapeKey)) {
-        attrs.put(Zarr3ArrayAttributes.shapeKey, attrs.get(DatasetAttributes.DIMENSIONS_KEY));
+      if (!attrs.containsKey(Zarr3DatasetAttributes.shapeKey)) {
+        attrs.put(Zarr3DatasetAttributes.shapeKey, attrs.get(DatasetAttributes.DIMENSIONS_KEY));
       }
       attrs.remove(DatasetAttributes.DIMENSIONS_KEY);
     }
 
     if (attrs.containsKey(DatasetAttributes.DATA_TYPE_KEY)) {
-      if (!attrs.containsKey(Zarr3ArrayAttributes.dataTypeKey)) {
-        attrs.put(Zarr3ArrayAttributes.dataTypeKey,
+      if (!attrs.containsKey(Zarr3DatasetAttributes.dataTypeKey)) {
+        attrs.put(Zarr3DatasetAttributes.dataTypeKey,
             attrs.get(DatasetAttributes.DATA_TYPE_KEY));
       }
       attrs.remove(DatasetAttributes.DATA_TYPE_KEY);
@@ -542,7 +542,7 @@ public class Zarr3KeyValueWriter extends
     setZarr3ArrayAttributes(pathName, createZarr3ArrayAttributes(datasetAttributes));
   }
 
-  protected Zarr3ArrayAttributes createZarr3ArrayAttributes(
+  protected Zarr3DatasetAttributes createZarr3ArrayAttributes(
       final DatasetAttributes datasetAttributes) {
 
     final long[] shape = datasetAttributes.getDimensions().clone();
@@ -550,7 +550,7 @@ public class Zarr3KeyValueWriter extends
         datasetAttributes.getBlockSize().clone());
     final DataType dataType = new DataType(datasetAttributes.getDataType());
 
-    final Zarr3ArrayAttributes zArrayAttributes = new Zarr3ArrayAttributes(
+    final Zarr3DatasetAttributes zArrayAttributes = new Zarr3DatasetAttributes(
         shape,
         dataType,
         chunkGrid,
@@ -569,7 +569,7 @@ public class Zarr3KeyValueWriter extends
    * @param attributes ZArray attributes
    * @throws N5Exception the exception
    */
-  public void setZarr3ArrayAttributes(final String pathName, final Zarr3ArrayAttributes attributes)
+  public void setZarr3ArrayAttributes(final String pathName, final Zarr3DatasetAttributes attributes)
       throws N5Exception {
 
     writeZarrJson(pathName, gson.toJsonTree(attributes.asMap()));

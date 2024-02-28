@@ -46,12 +46,10 @@ import com.google.gson.JsonPrimitive;
 import com.google.gson.reflect.TypeToken;
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -74,12 +72,8 @@ import org.janelia.saalfeldlab.n5.N5Exception;
 import org.janelia.saalfeldlab.n5.N5Exception.N5ClassCastException;
 import org.janelia.saalfeldlab.n5.N5Reader;
 import org.janelia.saalfeldlab.n5.N5Writer;
-import org.janelia.saalfeldlab.n5.RawCompression;
 import org.janelia.saalfeldlab.n5.imglib2.N5Utils;
 import org.janelia.saalfeldlab.n5.zarr3.ChunkKeyEncoding.DefaultChunkKeyEncoding;
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
-import org.json.simple.parser.ParseException;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -228,7 +222,7 @@ public class N5Zarr3Test extends AbstractN5Test {
     n5Nested.createDataset(datasetName, dimensions, blockSize, DataType.UINT64,
         getCompressions()[0]);
     assertEquals(new DefaultChunkKeyEncoding('/'),
-        n5Nested.getArrayAttributes(datasetName).getChunkKeyEncoding());
+        n5Nested.getDatasetAttributes(datasetName).getChunkKeyEncoding());
 
     // TODO test that parents of nested dataset are groups
 
@@ -584,7 +578,7 @@ public class N5Zarr3Test extends AbstractN5Test {
         datasetName);
     assertIsSequence(Views.interval(a3x2_c_bu4_f1_after, a3x2_c_bu4_f1), refUnsignedInt);
     final RandomAccess<UnsignedIntType> ra = a3x2_c_bu4_f1_after.randomAccess();
-    final int fill_value = (int) n5Zarr.getArrayAttributes(datasetName).getFillValue();
+    final int fill_value = (int) n5Zarr.getDatasetAttributes(datasetName).getFillValue();
     ra.setPosition(shape[0] - 5, 0);
     assertEquals(fill_value, ra.get().getInteger());
     ra.setPosition(shape[1] - 5, 1);
@@ -659,7 +653,7 @@ public class N5Zarr3Test extends AbstractN5Test {
     assertArrayEquals(datasetAttributesC.getBlockSize(), new int[]{3, 2});
     assertEquals(datasetAttributesC.getDataType(), DataType.UINT8);
     assertEquals(
-        n5Zarr.getArrayAttributes(testZarrDatasetName + "/3x2_c_u1").getChunkKeyEncoding(),
+        n5Zarr.getDatasetAttributes(testZarrDatasetName + "/3x2_c_u1").getChunkKeyEncoding(),
         new DefaultChunkKeyEncoding('/'));
 
     final UnsignedByteType refUnsignedByte = new UnsignedByteType();
@@ -753,16 +747,16 @@ public class N5Zarr3Test extends AbstractN5Test {
 
       n5.createDataset(datasetName, dimensions, blockSize, DataType.UINT64, getCompressions()[0]);
 
-      long[] dimsZarr = n5.getAttribute(datasetName, Zarr3ArrayAttributes.shapeKey, long[].class);
+      long[] dimsZarr = n5.getAttribute(datasetName, Zarr3DatasetAttributes.shapeKey, long[].class);
       long[] dimsN5 = n5.getAttribute(datasetName, DatasetAttributes.DIMENSIONS_KEY, long[].class);
       assertArrayEquals(dimsZarr, dimsN5);
 
       int[] blkZarr = n5.getAttribute(datasetName,
-          Zarr3ArrayAttributes.chunkGridKey + "/configuration/chunk_shape", int[].class);
+          Zarr3DatasetAttributes.chunkGridKey + "/configuration/chunk_shape", int[].class);
       int[] blkN5 = n5.getAttribute(datasetName, DatasetAttributes.BLOCK_SIZE_KEY, int[].class);
       assertArrayEquals(blkZarr, blkN5);
 
-      String typestr = n5.getAttribute(datasetName, Zarr3ArrayAttributes.dataTypeKey, String.class);
+      String typestr = n5.getAttribute(datasetName, Zarr3DatasetAttributes.dataTypeKey, String.class);
       org.janelia.saalfeldlab.n5.zarr3.DataType dtype = new org.janelia.saalfeldlab.n5.zarr3.DataType(
           typestr);
       // read to a string because zarr may not have the N5 DataType deserializer
@@ -783,20 +777,20 @@ public class N5Zarr3Test extends AbstractN5Test {
 
       // ensure variables can be set through the n5 variables as well
       n5.setAttribute(datasetName, DatasetAttributes.DIMENSIONS_KEY, newDims);
-      dimsZarr = n5.getAttribute(datasetName, Zarr3ArrayAttributes.shapeKey, long[].class);
+      dimsZarr = n5.getAttribute(datasetName, Zarr3DatasetAttributes.shapeKey, long[].class);
       dimsN5 = n5.getAttribute(datasetName, DatasetAttributes.DIMENSIONS_KEY, long[].class);
       assertArrayEquals(newDims, dimsZarr);
       assertArrayEquals(newDims, dimsN5);
 
       n5.setAttribute(datasetName, DatasetAttributes.BLOCK_SIZE_KEY, newBlk);
-      blkZarr = n5.getAttribute(datasetName, Zarr3ArrayAttributes.shapeKey, int[].class);
+      blkZarr = n5.getAttribute(datasetName, Zarr3DatasetAttributes.shapeKey, int[].class);
       blkN5 = n5.getAttribute(datasetName, DatasetAttributes.BLOCK_SIZE_KEY, int[].class);
       assertArrayEquals(newBlk, blkZarr);
       assertArrayEquals(newBlk, blkN5);
 
       n5.setAttribute(datasetName, DatasetAttributes.DATA_TYPE_KEY, newDtype.toString());
 
-      typestr = n5.getAttribute(datasetName, Zarr3ArrayAttributes.dataTypeKey, String.class);
+      typestr = n5.getAttribute(datasetName, Zarr3DatasetAttributes.dataTypeKey, String.class);
       dtype = new org.janelia.saalfeldlab.n5.zarr3.DataType(typestr);
       n5DataType = DataType.fromString(
           n5.getAttribute(datasetName, DatasetAttributes.DATA_TYPE_KEY, String.class));
