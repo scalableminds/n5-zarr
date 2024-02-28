@@ -35,6 +35,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import java.lang.reflect.Type;
 import java.util.HashMap;
+import java.util.Objects;
 
 
 /**
@@ -55,9 +56,11 @@ public class Zarr3GroupAttributes {
 
   private final JsonObject attributes;
 
-  public Zarr3GroupAttributes(
-      final JsonObject attributes
-  ) {
+  public Zarr3GroupAttributes() {
+    this(new JsonObject());
+  }
+
+  public Zarr3GroupAttributes(final JsonObject attributes) {
     this.attributes = attributes;
   }
 
@@ -91,6 +94,10 @@ public class Zarr3GroupAttributes {
 
       final JsonObject obj = json.getAsJsonObject();
       try {
+        if (!Objects.equals(obj.get(Zarr3KeyValueReader.NODE_TYPE_KEY).getAsString(),
+            Zarr3KeyValueReader.NODE_TYPE_GROUP)) {
+          return null;
+        }
         return new Zarr3GroupAttributes(
             obj.get("attributes").getAsJsonObject()
         );

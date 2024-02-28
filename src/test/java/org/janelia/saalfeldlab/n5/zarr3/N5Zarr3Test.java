@@ -349,35 +349,35 @@ public class N5Zarr3Test extends AbstractN5Test {
     final String groupName2 = groupName + "-2";
     final String datasetName2 = datasetName + "-2";
 
-    try (N5Writer n5 = createN5Writer()) {
+    try (N5Zarr3Writer n5 = createN5Writer()) {
 
       n5.createDataset(datasetName2, dimensions, blockSize, DataType.UINT64, getCompressions()[0]);
-      n5.setAttribute(datasetName2, "attr1", new double[]{1, 2, 3});
-      n5.setAttribute(datasetName2, "attr2", new String[]{"a", "b", "c"});
-      n5.setAttribute(datasetName2, "attr3", 1.0);
-      n5.setAttribute(datasetName2, "attr4", "a");
-      n5.setAttribute(datasetName2, "attr5", 5.4);
+      n5.setAttribute(datasetName2, "attributes/attr1", new double[]{1, 2, 3});
+      n5.setAttribute(datasetName2, "attributes/attr2", new String[]{"a", "b", "c"});
+      n5.setAttribute(datasetName2, "attributes/attr3", 1.0);
+      n5.setAttribute(datasetName2, "attributes/attr4", "a");
+      n5.setAttribute(datasetName2, "attributes/attr5", 5.4);
 
-      Map<String, Class<?>> attributesMap = n5.listAttributes(datasetName2);
-      assertSame(attributesMap.get("attr1"), long[].class);
-      assertSame(attributesMap.get("attr2"), String[].class);
-      assertSame(attributesMap.get("attr3"), long.class);
-      assertSame(attributesMap.get("attr4"), String.class);
-      assertSame(attributesMap.get("attr5"), double.class);
+      Map<String, Class<?>> attributesMap = n5.listAttributesFlattened(datasetName2);
+      assertSame(attributesMap.get("attributes/attr1"), long[].class);
+      assertSame(attributesMap.get("attributes/attr2"), String[].class);
+      assertSame(attributesMap.get("attributes/attr3"), long.class);
+      assertSame(attributesMap.get("attributes/attr4"), String.class);
+      assertSame(attributesMap.get("attributes/attr5"), double.class);
 
       n5.createGroup(groupName2);
-      n5.setAttribute(groupName2, "attr1", new double[]{1, 2, 3});
-      n5.setAttribute(groupName2, "attr2", new String[]{"a", "b", "c"});
-      n5.setAttribute(groupName2, "attr3", 1.0);
-      n5.setAttribute(groupName2, "attr4", "a");
-      n5.setAttribute(groupName2, "attr5", 5.4);
+      n5.setAttribute(groupName2, "attributes/attr1", new double[]{1, 2, 3});
+      n5.setAttribute(groupName2, "attributes/attr2", new String[]{"a", "b", "c"});
+      n5.setAttribute(groupName2, "attributes/attr3", 1.0);
+      n5.setAttribute(groupName2, "attributes/attr4", "a");
+      n5.setAttribute(groupName2, "attributes/attr5", 5.4);
 
-      attributesMap = n5.listAttributes(datasetName2);
-      assertSame(attributesMap.get("attr1"), long[].class);
-      assertSame(attributesMap.get("attr2"), String[].class);
-      assertSame(attributesMap.get("attr3"), long.class);
-      assertSame(attributesMap.get("attr4"), String.class);
-      assertSame(attributesMap.get("attr5"), double.class);
+      attributesMap = n5.listAttributesFlattened(datasetName2);
+      assertSame(attributesMap.get("attributes/attr1"), long[].class);
+      assertSame(attributesMap.get("attributes/attr2"), String[].class);
+      assertSame(attributesMap.get("attributes/attr3"), long.class);
+      assertSame(attributesMap.get("attributes/attr4"), String.class);
+      assertSame(attributesMap.get("attributes/attr5"), double.class);
     }
   }
 
@@ -671,67 +671,44 @@ public class N5Zarr3Test extends AbstractN5Test {
   }
 
   @Test
-  public void testRawCompressorNullInZarray() throws IOException, ParseException {
-
-    final String testZarrDirPath = tmpPathName("n5-zarr-test-");
-    final N5Zarr3Writer n5 = new N5Zarr3Writer(testZarrDirPath);
-    n5.createDataset(
-        testZarrDatasetName,
-        new long[]{1, 2, 3},
-        new int[]{1, 2, 3},
-        DataType.UINT16,
-        new RawCompression());
-    final JSONParser jsonParser = new JSONParser();
-    final File zArrayFile = Paths.get(testZarrDirPath, testZarrDatasetName, ".zarray").toFile();
-    try (FileReader freader = new FileReader(zArrayFile)) {
-      final JSONObject zarray = (JSONObject) jsonParser.parse(freader);
-      final JSONObject compressor = (JSONObject) zarray.get("compressor");
-      assertNull(compressor);
-    } finally {
-      n5.remove();
-      n5.close();
-    }
-  }
-
-  @Test
   @Override
   public void testAttributes() throws IOException {
 
-    try (final N5Writer n5 = createN5Writer()) {
+    try (final Zarr3KeyValueWriter n5 = createN5Writer()) {
       n5.createGroup(groupName);
 
       n5.setAttribute(groupName, "key1", "value1");
       // length 3 because it includes "zarr_version" and "node_type"
-      Assert.assertEquals(3, n5.listAttributes(groupName).size());
+      Assert.assertEquals(2 + 1, n5.listAttributes(groupName).size());
       /* class interface */
       Assert.assertEquals("value1", n5.getAttribute(groupName, "key1", String.class));
       /* type interface */
       Assert.assertEquals("value1",
-          n5.getAttribute(groupName, "attributes/key1", new TypeToken<String>() {
+          n5.getAttribute(groupName, "key1", new TypeToken<String>() {
 
           }.getType()));
 
       final Map<String, String> newAttributes = new HashMap<>();
-      newAttributes.put("attributes/key2", "value2");
-      newAttributes.put("attributes/key3", "value3");
+      newAttributes.put("key2", "value2");
+      newAttributes.put("key3", "value3");
       n5.setAttributes(groupName, newAttributes);
 
-      Assert.assertEquals(4, n5.listAttributes(groupName).size());
+      Assert.assertEquals(2 + 3, n5.listAttributesFlattened(groupName).size());
       /* class interface */
-      Assert.assertEquals("value1", n5.getAttribute(groupName, "attributes/key1", String.class));
-      Assert.assertEquals("value2", n5.getAttribute(groupName, "attributes/key2", String.class));
-      Assert.assertEquals("value3", n5.getAttribute(groupName, "attributes/key3", String.class));
+      Assert.assertEquals("value1", n5.getAttribute(groupName, "key1", String.class));
+      Assert.assertEquals("value2", n5.getAttribute(groupName, "key2", String.class));
+      Assert.assertEquals("value3", n5.getAttribute(groupName, "key3", String.class));
       /* type interface */
       Assert.assertEquals("value1",
-          n5.getAttribute(groupName, "attributes/key1", new TypeToken<String>() {
+          n5.getAttribute(groupName, "key1", new TypeToken<String>() {
 
           }.getType()));
       Assert.assertEquals("value2",
-          n5.getAttribute(groupName, "attributes/key2", new TypeToken<String>() {
+          n5.getAttribute(groupName, "key2", new TypeToken<String>() {
 
           }.getType()));
       Assert.assertEquals("value3",
-          n5.getAttribute(groupName, "attributes/key3", new TypeToken<String>() {
+          n5.getAttribute(groupName, "key3", new TypeToken<String>() {
 
           }.getType()));
 
@@ -739,7 +716,7 @@ public class N5Zarr3Test extends AbstractN5Test {
       n5.setAttribute(groupName, "key1", 1);
       n5.setAttribute(groupName, "key2", 2);
 
-      Assert.assertEquals(4, n5.listAttributes(groupName).size());
+      Assert.assertEquals(2 + 3, n5.listAttributesFlattened(groupName).size());
       /* class interface */
       Assert.assertEquals(Integer.valueOf(1), n5.getAttribute(groupName, "key1", Integer.class));
       Assert.assertEquals(Integer.valueOf(2), n5.getAttribute(groupName, "key2", Integer.class));
@@ -764,7 +741,7 @@ public class N5Zarr3Test extends AbstractN5Test {
       n5.removeAttribute(groupName, "key1");
       n5.removeAttribute(groupName, "key2");
       n5.removeAttribute(groupName, "key3");
-      Assert.assertEquals(1, n5.listAttributes(groupName).size());
+      Assert.assertEquals(2 + 0, n5.listAttributesFlattened(groupName).size());
     }
   }
 

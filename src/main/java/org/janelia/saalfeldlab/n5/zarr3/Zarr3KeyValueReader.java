@@ -22,9 +22,7 @@ package org.janelia.saalfeldlab.n5.zarr3;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSyntaxException;
@@ -36,11 +34,11 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Map;
+import java.util.stream.Stream;
 import org.janelia.saalfeldlab.n5.BlockReader;
 import org.janelia.saalfeldlab.n5.ByteArrayDataBlock;
 import org.janelia.saalfeldlab.n5.CachedGsonKeyValueN5Reader;
-import org.janelia.saalfeldlab.n5.Compression;
-import org.janelia.saalfeldlab.n5.CompressionAdapter;
 import org.janelia.saalfeldlab.n5.DataBlock;
 import org.janelia.saalfeldlab.n5.DatasetAttributes;
 import org.janelia.saalfeldlab.n5.GsonUtils;
@@ -50,9 +48,7 @@ import org.janelia.saalfeldlab.n5.N5Exception;
 import org.janelia.saalfeldlab.n5.N5Exception.N5IOException;
 import org.janelia.saalfeldlab.n5.N5Reader;
 import org.janelia.saalfeldlab.n5.N5URI;
-import org.janelia.saalfeldlab.n5.RawCompression;
 import org.janelia.saalfeldlab.n5.cache.N5JsonCacheableContainer;
-import org.janelia.saalfeldlab.n5.zarr.ZArrayAttributes;
 import org.janelia.saalfeldlab.n5.zarr3.ChunkGrid.RegularChunkGrid;
 import org.janelia.saalfeldlab.n5.zarr3.ChunkKeyEncoding.DefaultChunkKeyEncoding;
 import org.janelia.saalfeldlab.n5.zarr3.ChunkKeyEncoding.V2ChunkKeyEncoding;
@@ -91,7 +87,6 @@ public class Zarr3KeyValueReader implements CachedGsonKeyValueN5Reader, N5JsonCa
    * Opens an {@link Zarr3KeyValueReader} at a given base path with a custom {@link GsonBuilder} to
    * support custom attributes.
    *
-   * @param checkVersion           perform version check
    * @param keyValueAccess
    * @param basePath               N5 base path
    * @param gsonBuilder            the gson builder
@@ -110,7 +105,6 @@ public class Zarr3KeyValueReader implements CachedGsonKeyValueN5Reader, N5JsonCa
    *                     container is not compatible with this implementation.
    */
   public Zarr3KeyValueReader(
-      final boolean checkVersion,
       final KeyValueAccess keyValueAccess,
       final String basePath,
       final GsonBuilder gsonBuilder,
@@ -139,33 +133,6 @@ public class Zarr3KeyValueReader implements CachedGsonKeyValueN5Reader, N5JsonCa
     } else {
       cache = null;
     }
-  }
-
-  /**
-   * Opens an {@link Zarr3KeyValueReader} at a given base path with a custom {@link GsonBuilder} to
-   * support custom attributes.
-   *
-   * @param keyValueAccess
-   * @param basePath       N5 base path
-   * @param gsonBuilder
-   * @param cacheMeta      cache attributes and meta data Setting this to true avoids frequent
-   *                       reading and parsing of JSON encoded attributes and other meta data that
-   *                       requires accessing the store. This is most interesting for high latency
-   *                       backends. Changes of cached attributes and meta data by an independent
-   *                       writer will not be tracked.
-   * @throws N5Exception if the base path cannot be read or does not exist, if the N5 version of the
-   *                     container is not compatible with this implementation.
-   */
-  public Zarr3KeyValueReader(
-      final KeyValueAccess keyValueAccess,
-      final String basePath,
-      final GsonBuilder gsonBuilder,
-      final boolean mapN5DatasetAttributes,
-      final boolean cacheMeta)
-      throws N5Exception {
-
-    this(true, keyValueAccess, basePath, gsonBuilder, mapN5DatasetAttributes,
-        cacheMeta);
   }
 
   /**
@@ -231,7 +198,8 @@ public class Zarr3KeyValueReader implements CachedGsonKeyValueN5Reader, N5JsonCa
         new org.janelia.saalfeldlab.n5.DataType.JsonAdapter());
     gsonBuilder.registerTypeAdapter(Zarr3CodecPipeline.class, Zarr3CodecPipeline.jsonAdapter);
     gsonBuilder.registerTypeHierarchyAdapter(ChunkKeyEncoding.class, ChunkKeyEncoding.jsonAdapter);
-    gsonBuilder.registerTypeAdapter(DefaultChunkKeyEncoding.class, DefaultChunkKeyEncoding.jsonAdapter);
+    gsonBuilder.registerTypeAdapter(DefaultChunkKeyEncoding.class,
+        DefaultChunkKeyEncoding.jsonAdapter);
     gsonBuilder.registerTypeAdapter(V2ChunkKeyEncoding.class, V2ChunkKeyEncoding.jsonAdapter);
     gsonBuilder.registerTypeHierarchyAdapter(ChunkGrid.class, ChunkGrid.jsonAdapter);
     gsonBuilder.registerTypeAdapter(RegularChunkGrid.class, RegularChunkGrid.jsonAdapter);
@@ -333,14 +301,20 @@ public class Zarr3KeyValueReader implements CachedGsonKeyValueN5Reader, N5JsonCa
 
   @Override
   public boolean isGroupFromContainer(final String normalPath) {
-    return keyValueAccess.isFile(keyValueAccess.compose(uri, normalPath, ZARR_JSON_FILE));
+    JsonElement zarrJson = getAttributesFromContainer(normalPath, ZARR_JSON_FILE);
+    if (zarrJson == null) {
+      return false;
+    }
+    return isGroupFromAttributes(ZARR_JSON_FILE, zarrJson);
   }
 
   @Override
   public boolean isGroupFromAttributes(final String normalCacheKey, final JsonElement attributes) {
-
-    return attributes != null && attributes.isJsonObject() && attributes.getAsJsonObject()
-        .has(ZARR_FORMAT_KEY);
+    if (normalCacheKey.equals(ZARR_JSON_FILE) && attributes != null && attributes.isJsonObject()) {
+      return gson.fromJson(attributes, Zarr3GroupAttributes.class) != null;
+    } else {
+      return false;
+    }
   }
 
   @Override
@@ -411,42 +385,32 @@ public class Zarr3KeyValueReader implements CachedGsonKeyValueN5Reader, N5JsonCa
     return gson.fromJson(attributes, Zarr3ArrayAttributes.class);
   }
 
-
-  /**
-   * Returns the {@link Zarr3GroupAttributes} located at the given path, if present.
-   *
-   * @param pathName the path relative to the container's root
-   * @return the zarr array attributes
-   * @throws N5Exception the exception
-   */
-  public Zarr3GroupAttributes getGroupAttributes(final String pathName) throws N5Exception {
-
-    return getGroupAttributes(getZarrJson(pathName));
-  }
-
-  /**
-   * Constructs {@link Zarr3GroupAttributes} from a {@link JsonElement}.
-   *
-   * @param attributes the json element
-   * @return the zarr array attributes
-   */
-  protected Zarr3GroupAttributes getGroupAttributes(final JsonElement attributes) {
-
-    return gson.fromJson(attributes, Zarr3GroupAttributes.class);
-  }
-
   @Override
   public Zarr3DatasetAttributes createDatasetAttributes(final JsonElement attributes) {
 
-    final Zarr3ArrayAttributes zarray = getArrayAttributes(attributes);
-    return zarray != null ? zarray.getDatasetAttributes() : null;
+    final Zarr3ArrayAttributes arrayAttributes = getArrayAttributes(attributes);
+    return arrayAttributes != null ? arrayAttributes.getDatasetAttributes() : null;
+  }
+
+  protected String translateAttributePath(final String key) {
+    String[] keyParts = getKeyValueAccess().components(key);
+
+    Stream<String> coreAttributeKeys = Stream.concat(Arrays.stream(Zarr3ArrayAttributes.allKeys),
+        Stream.of(DatasetAttributes.COMPRESSION_KEY, DatasetAttributes.BLOCK_SIZE_KEY,
+            DatasetAttributes.DIMENSIONS_KEY, DatasetAttributes.DATA_TYPE_KEY));
+
+    if (keyParts.length > 0 && coreAttributeKeys.anyMatch(keyParts[0]::equals)) {
+      return key;
+    }
+    return "attributes/" + key;
   }
 
   @Override
   public <T> T getAttribute(final String pathName, final String key, final Class<T> clazz)
       throws N5Exception {
 
-    final String normalizedAttributePath = N5URI.normalizeAttributePath(key);
+    final String normalizedAttributePath = translateAttributePath(
+        N5URI.normalizeAttributePath(key));
     final JsonElement attributes = getAttributes(pathName); // handles caching
     try {
       return GsonUtils.readAttribute(attributes, normalizedAttributePath, clazz, gson);
@@ -459,7 +423,8 @@ public class Zarr3KeyValueReader implements CachedGsonKeyValueN5Reader, N5JsonCa
   public <T> T getAttribute(final String pathName, final String key, final Type type)
       throws N5Exception {
 
-    final String normalizedAttributePath = N5URI.normalizeAttributePath(key);
+    final String normalizedAttributePath = translateAttributePath(
+        N5URI.normalizeAttributePath(key));
     final JsonElement attributes = getAttributes(pathName); // handles caching
     try {
       return GsonUtils.readAttribute(attributes, normalizedAttributePath, type, gson);
@@ -506,54 +471,11 @@ public class Zarr3KeyValueReader implements CachedGsonKeyValueN5Reader, N5JsonCa
     }
 
     final JsonObject attrs = elem.getAsJsonObject();
-    final Zarr3ArrayAttributes zattrs = getArrayAttributes(attrs);
-    if (zattrs == null) {
+    final Zarr3ArrayAttributes arrayAttributes = getArrayAttributes(attrs);
+    if (arrayAttributes == null) {
       return elem;
     }
-
-    attrs.add(DatasetAttributes.DIMENSIONS_KEY, attrs.get(Zarr3ArrayAttributes.shapeKey));
-    attrs.add(DatasetAttributes.BLOCK_SIZE_KEY,
-        attrs.get(Zarr3ArrayAttributes.chunkGridKey).getAsJsonObject().get("configuration")
-            .getAsJsonObject().get("chunk_shape"));
-    attrs.addProperty(DatasetAttributes.DATA_TYPE_KEY, zattrs.getDType().getDataType().toString());
-
-    // TODO: Codecs
-    final JsonElement e = attrs.get(Zarr3ArrayAttributes.codecsKey);
-    if (e == JsonNull.INSTANCE) {
-      attrs.add(DatasetAttributes.COMPRESSION_KEY, gson.toJsonTree(new RawCompression()));
-    } else {
-      attrs.add(DatasetAttributes.COMPRESSION_KEY, gson.toJsonTree(
-          gson.fromJson(attrs.get(Zarr3ArrayAttributes.codecsKey), ZarrCodec.class)
-              .getCompression()));
-    }
-    return attrs;
-  }
-
-  protected JsonElement n5ToZarrDatasetAttributes(final JsonElement elem) {
-
-    if (!mapN5DatasetAttributes || elem == null || !elem.isJsonObject()) {
-      return elem;
-    }
-
-    final JsonObject attrs = elem.getAsJsonObject();
-    if (attrs.has(DatasetAttributes.DIMENSIONS_KEY)) {
-      attrs.add(Zarr3ArrayAttributes.shapeKey, attrs.get(DatasetAttributes.DIMENSIONS_KEY));
-    }
-
-    if (attrs.has(DatasetAttributes.BLOCK_SIZE_KEY)) {
-      JsonObject chunkGridConfigurationObject = new JsonObject();
-      chunkGridConfigurationObject.add("chunk_shape", attrs.get(DatasetAttributes.BLOCK_SIZE_KEY));
-      JsonObject chunkGridObject = new JsonObject();
-      chunkGridObject.add("name", new JsonPrimitive("regular"));
-      chunkGridObject.add("configuration", chunkGridConfigurationObject);
-      attrs.add(Zarr3ArrayAttributes.chunkGridKey, chunkGridObject);
-    }
-
-    if (attrs.has(DatasetAttributes.DATA_TYPE_KEY)) {
-      attrs.add(Zarr3ArrayAttributes.dataTypeKey, attrs.get(DatasetAttributes.DATA_TYPE_KEY));
-    }
-
-    return attrs;
+    return arrayAttributes.asN5Attributes(gson);
   }
 
   /**
@@ -565,11 +487,31 @@ public class Zarr3KeyValueReader implements CachedGsonKeyValueN5Reader, N5JsonCa
    */
   @Override
   public JsonElement getAttributes(final String path) throws N5Exception {
-    return zarrToN5DatasetAttributes(reverseAttrsWhenCOrder(getZarrJson(path)));
+    return zarrToN5DatasetAttributes(getZarrJson(path));
   }
 
+  protected JsonObject flattenAttributes(JsonObject json) {
+    JsonObject out = new JsonObject();
+    for (Map.Entry<String, JsonElement> entry : json.entrySet()) {
+      if (entry.getValue().isJsonObject()) {
+        for (Map.Entry<String, JsonElement> nestedEntry : entry.getValue().getAsJsonObject()
+            .entrySet()) {
+          out.add(entry.getKey() + "/" + nestedEntry.getKey(), nestedEntry.getValue());
+        }
+      } else {
+        out.add(entry.getKey(), entry.getValue());
+      }
+    }
+    return out;
+  }
+
+  public Map<String, Class<?>> listAttributesFlattened(final String path) throws N5Exception {
+    return GsonUtils.listAttributes(flattenAttributes(getAttributes(path).getAsJsonObject()));
+  }
+
+
   protected JsonElement getAttributesUnmapped(final String path) throws N5Exception {
-    return reverseAttrsWhenCOrder(getZarrJson(path));
+    return getZarrJson(path);
   }
 
   @Override

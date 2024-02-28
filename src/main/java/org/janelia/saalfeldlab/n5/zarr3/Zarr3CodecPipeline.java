@@ -18,7 +18,7 @@ import org.janelia.saalfeldlab.n5.Compression;
 import org.janelia.saalfeldlab.n5.DataBlock;
 import org.janelia.saalfeldlab.n5.DefaultBlockReader;
 import org.janelia.saalfeldlab.n5.DefaultBlockWriter;
-import org.janelia.saalfeldlab.n5.zarr3.ZarrCodec.JsonAdapter;
+import org.janelia.saalfeldlab.n5.RawCompression;
 
 public class Zarr3CodecPipeline implements DefaultBlockReader, DefaultBlockWriter, Compression {
 
@@ -30,13 +30,23 @@ public class Zarr3CodecPipeline implements DefaultBlockReader, DefaultBlockWrite
     this.codecs = codecs;
   }
 
+  public static Zarr3CodecPipeline guessCompression(Compression compression) {
+    if (compression instanceof RawCompression) {
+      return new Zarr3CodecPipeline(new JsonArray());
+    } else if (compression instanceof Zarr3CodecPipeline) {
+      return (Zarr3CodecPipeline)compression;
+    }
+    throw new RuntimeException("Sorry about that. " + compression.toString());
+  }
+
+  /*
   public <T, B extends DataBlock<T>> void read(B dataBlock, InputStream in) throws IOException {
     ((DefaultBlockReader)this).read(dataBlock, in);
   }
 
   public <T> void write(DataBlock<T> dataBlock, OutputStream out) throws IOException {
     ((DefaultBlockWriter)this).write(dataBlock, out);
-  }
+  }*/
 
   public Zarr3CodecPipeline getReader() {
     return this;

@@ -28,14 +28,19 @@
  */
 package org.janelia.saalfeldlab.n5.zarr3;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonDeserializer;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonPrimitive;
 import java.lang.reflect.Type;
 import java.util.HashMap;
+import java.util.Objects;
+import org.janelia.saalfeldlab.n5.DatasetAttributes;
+import org.janelia.saalfeldlab.n5.RawCompression;
 import org.janelia.saalfeldlab.n5.zarr3.ChunkGrid.RegularChunkGrid;
 
 
@@ -52,16 +57,9 @@ public class Zarr3ArrayAttributes {
   public static final String fillValueKey = "fill_value";
   public static final String attributesKey = "attributes";
 
-  public static final String[] requiredKeys = new String[]{
-      Zarr3KeyValueReader.ZARR_FORMAT_KEY, Zarr3KeyValueReader.NODE_TYPE_KEY, chunkGridKey,
-      dataTypeKey, codecsKey, fillValueKey,
-      chunkKeyEncodingKey
-  };
-
   public static final String[] allKeys = new String[]{Zarr3KeyValueReader.ZARR_FORMAT_KEY,
-      Zarr3KeyValueReader.NODE_TYPE_KEY, chunkGridKey,
-      dataTypeKey, codecsKey,
-      fillValueKey, chunkKeyEncodingKey
+      Zarr3KeyValueReader.NODE_TYPE_KEY, shapeKey, dataTypeKey, chunkGridKey, chunkKeyEncodingKey,
+      codecsKey, fillValueKey, attributesKey
   };
   public static JsonAdapter jsonAdapter = new JsonAdapter();
   private final long[] shape;
@@ -175,6 +173,25 @@ public class Zarr3ArrayAttributes {
     return map;
   }
 
+  public JsonObject asN5Attributes(Gson gson) {
+    final JsonObject attrs = gson.toJsonTree(asMap()).getAsJsonObject();
+
+    attrs.add(DatasetAttributes.DIMENSIONS_KEY, Utils.toJsonArray(shape));
+    attrs.add(DatasetAttributes.BLOCK_SIZE_KEY,
+        Utils.toJsonArray(((RegularChunkGrid) chunkGrid).chunkShape));
+    attrs.addProperty(DatasetAttributes.DATA_TYPE_KEY, dataType.getDataType().toString());
+
+    // TODO: Codecs
+    final JsonElement e = attrs.get(Zarr3ArrayAttributes.codecsKey);
+    if (e == JsonNull.INSTANCE) {
+      attrs.add(DatasetAttributes.COMPRESSION_KEY, gson.toJsonTree(new RawCompression()));
+    } else {
+      attrs.add(DatasetAttributes.COMPRESSION_KEY, gson.toJsonTree(codecs));
+    }
+
+    return attrs;
+  }
+
   public static class JsonAdapter implements JsonDeserializer<Zarr3ArrayAttributes> {
 
     @Override
@@ -183,10 +200,15 @@ public class Zarr3ArrayAttributes {
 
       final JsonObject obj = json.getAsJsonObject();
       try {
-        final String typestr = obj.get("data_type").getAsString();
+        if (!Objects.equals(obj.get(Zarr3KeyValueReader.NODE_TYPE_KEY).getAsString(),
+            Zarr3KeyValueReader.NODE_TYPE_ARRAY)) {
+          return null;
+        }
+
+        final String typestr = obj.get(dataTypeKey).getAsString();
         final DataType dataType = new DataType(typestr);
 
-        final JsonPrimitive fillValueJson = obj.get("fill_value").getAsJsonPrimitive();
+        final JsonPrimitive fillValueJson = obj.get(fillValueKey).getAsJsonPrimitive();
         Object fillValue;
         if (fillValueJson.isBoolean()) {
           fillValue = fillValueJson.getAsBoolean();
@@ -199,13 +221,13 @@ public class Zarr3ArrayAttributes {
         }
 
         return new Zarr3ArrayAttributes(
-            context.deserialize(obj.get("shape"), long[].class),
+            context.deserialize(obj.get(shapeKey), long[].class),
             dataType,
-            context.deserialize(obj.get("chunk_grid"), ChunkGrid.class),
-            context.deserialize(obj.get("chunk_key_encoding"), ChunkKeyEncoding.class),
-            context.deserialize(obj.get("codecs"), Zarr3CodecPipeline.class), // fix
+            context.deserialize(obj.get(chunkGridKey), ChunkGrid.class),
+            context.deserialize(obj.get(chunkKeyEncodingKey), ChunkKeyEncoding.class),
+            context.deserialize(obj.get(codecsKey), Zarr3CodecPipeline.class), // fix
             fillValue,
-            obj.get("attributes").getAsJsonObject()
+            obj.get(attributesKey).getAsJsonObject()
         );
       } catch (Exception e) {
         return null;

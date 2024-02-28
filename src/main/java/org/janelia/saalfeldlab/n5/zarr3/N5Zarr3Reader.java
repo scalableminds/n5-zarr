@@ -73,8 +73,7 @@ public class N5Zarr3Reader extends Zarr3KeyValueReader {
 		super(
 				new FileSystemKeyValueAccess(FileSystems.getDefault()),
 				basePath,
-				gsonBuilder
-					.registerTypeAdapter(ZarrCodec.class, ZarrCodec.jsonAdapter),
+				gsonBuilder,
 				mapN5DatasetAttributes,
 				cacheMeta);
 

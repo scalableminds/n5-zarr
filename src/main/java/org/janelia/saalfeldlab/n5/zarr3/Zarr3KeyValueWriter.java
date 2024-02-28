@@ -30,6 +30,7 @@ import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSyntaxException;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -96,7 +97,6 @@ public class Zarr3KeyValueWriter extends
       throws N5Exception {
 
     super(
-        false,
         keyValueAccess,
         basePath,
         gsonBuilder,
@@ -269,67 +269,6 @@ public class Zarr3KeyValueWriter extends
     }
   }
 
-  protected static JsonObject build(final JsonObject obj, final Gson gson) {
-
-    return build(obj, gson, true);
-  }
-
-  /**
-   * Creates a {@link JsonObject} object from a {@link JsonObject} containing attributes.
-   * <p>
-   * Used when re-directing attributes to the appropriate zarr metadata files according to attribute
-   * keys.
-   *
-   * @param obj             the json attributes object
-   * @param gson            the json
-   * @param mapN5Attributes if true, map n5 attribute keys to corresponding zarr attribute keys
-   * @return
-   */
-  protected static JsonObject build(final JsonObject obj, final Gson gson,
-      final boolean mapN5Attributes) {
-
-    // first map n5 attributes
-    if (mapN5Attributes) {
-      redirectDatasetAttribute(obj, DatasetAttributes.DIMENSIONS_KEY, obj,
-          Zarr3ArrayAttributes.shapeKey);
-      redirectChunkGrid(obj, obj);
-      redirectDataType(obj, obj);
-      redirectCompression(obj, gson, obj);
-    }
-
-    // put relevant attributes in appropriate JsonElements
-    final JsonObject out = new JsonObject();
-    // make the array json
-    if (hasRequiredArrayKeys(obj)) {
-      out.add(NODE_TYPE_KEY, new JsonPrimitive(NODE_TYPE_ARRAY));
-      move(obj, out, Zarr3ArrayAttributes.allKeys);
-      reverseAttrsWhenCOrder(out);
-    } else if (obj.has(ZARR_FORMAT_KEY)) {
-      out.add(NODE_TYPE_KEY, new JsonPrimitive(NODE_TYPE_GROUP));
-      move(obj, out, ZARR_FORMAT_KEY);
-    }
-
-    // whatever remains goes into user attributes
-    out.add("attributes", obj);
-
-    return out;
-  }
-
-  protected static boolean hasRequiredArrayKeys(final JsonObject obj) {
-    return Arrays.stream(Zarr3ArrayAttributes.requiredKeys).allMatch(obj::has);
-  }
-
-  protected static void move(final JsonObject src, final JsonObject dst,
-      final String... keys) {
-
-    for (final String key : keys) {
-      if (src.has(key)) {
-        dst.add(key, src.get(key));
-        src.remove(key);
-      }
-    }
-  }
-
   static void reorder(final long[] array) {
 
     long a;
@@ -402,9 +341,8 @@ public class Zarr3KeyValueWriter extends
       throw new N5IOException("Failed to create group " + path, e);
     }
 
-    final JsonObject zarrGroupObject = new JsonObject();
-    zarrGroupObject.add(ZARR_FORMAT_KEY, new JsonPrimitive(N5Zarr3Reader.VERSION.getMajor()));
-    zarrGroupObject.add(NODE_TYPE_KEY, new JsonPrimitive(NODE_TYPE_GROUP));
+    Zarr3GroupAttributes groupAttributes = new Zarr3GroupAttributes();
+    final JsonElement zarrGroupObject = gson.toJsonTree(groupAttributes.asMap());
 
     String[] pathParts = getKeyValueAccess().components(normalPath);
     String parent = N5URI.normalizeGroupPath("/");
@@ -476,6 +414,38 @@ public class Zarr3KeyValueWriter extends
     }
   }
 
+  protected void translateN5Attributes(final Map<String, Object> attrs) {
+    if (attrs.containsKey(DatasetAttributes.COMPRESSION_KEY)) {
+      if (!attrs.containsKey(Zarr3ArrayAttributes.codecsKey)) {
+        attrs.put(Zarr3ArrayAttributes.codecsKey, attrs.get(DatasetAttributes.COMPRESSION_KEY));
+      }
+      attrs.remove(DatasetAttributes.COMPRESSION_KEY);
+    }
+
+    if (attrs.containsKey(DatasetAttributes.BLOCK_SIZE_KEY)) {
+      if (!attrs.containsKey(Zarr3ArrayAttributes.chunkGridKey)) {
+        attrs.put(Zarr3ArrayAttributes.chunkGridKey + "/configuration/chunk_shape",
+            attrs.get(DatasetAttributes.BLOCK_SIZE_KEY));
+      }
+      attrs.remove(DatasetAttributes.BLOCK_SIZE_KEY);
+    }
+
+    if (attrs.containsKey(DatasetAttributes.DIMENSIONS_KEY)) {
+      if (!attrs.containsKey(Zarr3ArrayAttributes.shapeKey)) {
+        attrs.put(Zarr3ArrayAttributes.shapeKey, attrs.get(DatasetAttributes.DIMENSIONS_KEY));
+      }
+      attrs.remove(DatasetAttributes.DIMENSIONS_KEY);
+    }
+
+    if (attrs.containsKey(DatasetAttributes.DATA_TYPE_KEY)) {
+      if (!attrs.containsKey(Zarr3ArrayAttributes.dataTypeKey)) {
+        attrs.put(Zarr3ArrayAttributes.dataTypeKey,
+            attrs.get(DatasetAttributes.DATA_TYPE_KEY));
+      }
+      attrs.remove(DatasetAttributes.DATA_TYPE_KEY);
+    }
+  }
+
   @Override
   public void setAttributes(
       final String path,
@@ -486,18 +456,22 @@ public class Zarr3KeyValueWriter extends
       throw new N5IOException("" + normalPath + " is not a group or dataset.");
     }
 
-    // cache here or in writeAttributes?
-    // I think in writeAttributes is better - let it delegate to
-    // writeZArray, writeZAttrs, writeZGroup
     final JsonElement existingAttributes = getAttributesUnmapped(normalPath); // uses cache
     JsonElement newAttributes = existingAttributes != null && existingAttributes.isJsonObject()
         ? existingAttributes.getAsJsonObject()
         : new JsonObject();
-    newAttributes = GsonUtils.insertAttributes(newAttributes, attributes, gson);
+
+    // Move non-core attributes into "attributes" hash
+    final Map<String, Object> translatedAttributes = attributes.entrySet().stream()
+        .map(entry -> new SimpleImmutableEntry<>(translateAttributePath(entry.getKey()),
+            entry.getValue()))
+        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    // Translate N5 attributes to Zarr attributes
+    translateN5Attributes(translatedAttributes);
+    newAttributes = GsonUtils.insertAttributes(newAttributes, translatedAttributes, gson);
 
     if (newAttributes.isJsonObject()) {
-      writeZarrJson(normalPath,
-          build(newAttributes.getAsJsonObject(), getGson()));// handles caching
+      writeZarrJson(normalPath, newAttributes.getAsJsonObject());// handles caching
     } else {
       throw new N5Exception("Attributes are not an object");
     }
@@ -572,10 +546,8 @@ public class Zarr3KeyValueWriter extends
       final DatasetAttributes datasetAttributes) {
 
     final long[] shape = datasetAttributes.getDimensions().clone();
-    reorder(shape);
     final RegularChunkGrid chunkGrid = new RegularChunkGrid(
         datasetAttributes.getBlockSize().clone());
-    reorder(chunkGrid.chunkShape);
     final DataType dataType = new DataType(datasetAttributes.getDataType());
 
     final Zarr3ArrayAttributes zArrayAttributes = new Zarr3ArrayAttributes(
@@ -583,7 +555,7 @@ public class Zarr3KeyValueWriter extends
         dataType,
         chunkGrid,
         chunkKeyEncoding,
-        (Zarr3CodecPipeline) datasetAttributes.getCompression(),
+        Zarr3CodecPipeline.guessCompression(datasetAttributes.getCompression()),
         dataType.defaultFillValue(), new JsonObject());
 
     return zArrayAttributes;
