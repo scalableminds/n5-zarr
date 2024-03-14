@@ -10,31 +10,37 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Type;
-import java.nio.ByteBuffer;
-import org.apache.commons.compress.utils.IOUtils;
-import org.blosc.BufferSizes;
-import org.blosc.JBlosc;
 import org.janelia.saalfeldlab.n5.Compression;
-import org.janelia.saalfeldlab.n5.DataBlock;
 import org.janelia.saalfeldlab.n5.DefaultBlockReader;
 import org.janelia.saalfeldlab.n5.DefaultBlockWriter;
+import org.janelia.saalfeldlab.n5.GzipCompression;
 import org.janelia.saalfeldlab.n5.RawCompression;
 
 public class Zarr3CodecPipeline implements DefaultBlockReader, DefaultBlockWriter, Compression {
 
-  private JsonArray codecs;
-
   public static JsonAdapter jsonAdapter = new JsonAdapter();
+  private JsonArray codecs;
 
   public Zarr3CodecPipeline(JsonArray codecs) {
     this.codecs = codecs;
   }
 
   public static Zarr3CodecPipeline guessCompression(Compression compression) {
+    JsonObject bytesCodec = JsonBuilder.object()
+        .addProperty("name", "bytes")
+        .addObject("configuration", b1 -> b1.addProperty("endian", "little"))
+        .build();
     if (compression instanceof RawCompression) {
-      return new Zarr3CodecPipeline(new JsonArray());
+      return new Zarr3CodecPipeline(JsonBuilder.array().addObject(bytesCodec).build());
+    } else if (compression instanceof GzipCompression) {
+      return new Zarr3CodecPipeline(JsonBuilder.array()
+          .addObject(bytesCodec)
+          .addObject(c -> c
+              .addProperty("name", "gzip")
+              .addObject("configuration", c1 -> c1.addProperty("level", 5)))
+          .build());
     } else if (compression instanceof Zarr3CodecPipeline) {
-      return (Zarr3CodecPipeline)compression;
+      return (Zarr3CodecPipeline) compression;
     }
     throw new RuntimeException("Sorry about that. " + compression.toString());
   }
@@ -57,11 +63,11 @@ public class Zarr3CodecPipeline implements DefaultBlockReader, DefaultBlockWrite
   }
 
   public OutputStream getOutputStream(OutputStream out) throws IOException {
-    return null;
+    return out;
   }
 
   public InputStream getInputStream(InputStream in) throws IOException {
-    return null;
+    return in;
   }
 
   public JsonArray getCodecs() {

@@ -28,6 +28,7 @@
  */
 package org.janelia.saalfeldlab.n5.zarr3;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonDeserializer;
 import com.google.gson.JsonElement;
@@ -35,23 +36,19 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import java.lang.reflect.Type;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
+import org.janelia.saalfeldlab.n5.GsonUtils;
+import org.janelia.saalfeldlab.n5.N5URI;
 
 
 /**
  * @author Stephan Saalfeld &lt;saalfelds@janelia.hhmi.org&gt;
  */
-public class Zarr3GroupAttributes {
+public class Zarr3GroupAttributes implements Zarr3Attributes {
 
   public static final String attributesKey = "attributes";
 
-  public static final String[] requiredKeys = new String[]{
-      Zarr3KeyValueReader.ZARR_FORMAT_KEY,
-  };
-
-  public static final String[] allKeys = new String[]{Zarr3KeyValueReader.ZARR_FORMAT_KEY,
-      Zarr3KeyValueReader.NODE_TYPE_KEY, attributesKey
-  };
   public static JsonAdapter jsonAdapter = new JsonAdapter();
 
   private final JsonObject attributes;
@@ -64,26 +61,69 @@ public class Zarr3GroupAttributes {
     this.attributes = attributes;
   }
 
+  public static Zarr3GroupAttributes fromJson(JsonElement jsonElement, Gson gson) {
+    return gson.fromJson(jsonElement, Zarr3GroupAttributes.class);
+  }
 
-  public int getZarrFormat() {
+  public static Zarr3GroupAttributes fromN5Attributes(JsonElement jsonElement, Gson gson) {
+    JsonObject attrs = jsonElement.deepCopy().getAsJsonObject();
 
-    return Zarr3KeyValueReader.VERSION.getMajor();
+    if (attrs.get(ZARR_FORMAT_KEY).getAsInt() != ZARR_3.getMajor()) {
+      return null;
+    }
+
+    if (!Objects.equals(attrs.get(NODE_TYPE_KEY).getAsString(), NODE_TYPE_GROUP)) {
+      return null;
+    }
+
+    attrs.remove(ZARR_FORMAT_KEY);
+    attrs.remove(NODE_TYPE_KEY);
+
+    return new Zarr3GroupAttributes(attrs);
   }
 
   public JsonObject getAttributes() {
-
     return attributes;
+  }
+
+  @Override
+  public Zarr3Attributes setAttributes(final Map<String, ?> attributes, Gson gson) {
+    JsonElement newAttributes = GsonUtils.insertAttributes(asN5Attributes(gson), attributes, gson);
+    return fromN5Attributes(newAttributes, gson);
+  }
+
+  @Override
+  public Zarr3Attributes removeAttribute(final String keyPath, Gson gson) {
+    final String normalKey = N5URI.normalizeAttributePath(keyPath);
+    if (keyPath.equals("/")) {
+      return new Zarr3GroupAttributes();
+    }
+    JsonElement newAttributes = asN5Attributes(gson);
+    GsonUtils.removeAttribute(newAttributes, normalKey);
+    return fromN5Attributes(newAttributes, gson);
   }
 
   public HashMap<String, Object> asMap() {
 
     final HashMap<String, Object> map = new HashMap<>();
 
-    map.put(Zarr3KeyValueReader.ZARR_FORMAT_KEY, Zarr3KeyValueReader.VERSION.getMajor());
-    map.put(Zarr3KeyValueReader.NODE_TYPE_KEY, Zarr3KeyValueReader.NODE_TYPE_GROUP);
+    map.put(ZARR_FORMAT_KEY, ZARR_3.getMajor());
+    map.put(NODE_TYPE_KEY, NODE_TYPE_GROUP);
     map.put(attributesKey, attributes);
 
     return map;
+  }
+
+  public JsonObject asN5Attributes(Gson gson) {
+    JsonBuilder newAttrs = JsonBuilder.object();
+
+    for (Map.Entry<String, JsonElement> entry : attributes.entrySet()) {
+      newAttrs.addProperty(entry.getKey(), entry.getValue());
+    }
+
+    newAttrs.addProperty(NODE_TYPE_KEY, NODE_TYPE_GROUP);
+    newAttrs.addProperty(ZARR_FORMAT_KEY, ZARR_3.getMajor());
+    return newAttrs.build();
   }
 
   public static class JsonAdapter implements JsonDeserializer<Zarr3GroupAttributes> {
@@ -94,13 +134,24 @@ public class Zarr3GroupAttributes {
 
       final JsonObject obj = json.getAsJsonObject();
       try {
-        if (!Objects.equals(obj.get(Zarr3KeyValueReader.NODE_TYPE_KEY).getAsString(),
-            Zarr3KeyValueReader.NODE_TYPE_GROUP)) {
-          return null;
+        if (!obj.has(ZARR_FORMAT_KEY)) {
+          throw new JsonParseException(String.format("Key `%s` is missing.", ZARR_FORMAT_KEY));
         }
-        return new Zarr3GroupAttributes(
-            obj.get("attributes").getAsJsonObject()
-        );
+        if (obj.get(ZARR_FORMAT_KEY).getAsInt() != ZARR_3.getMajor()) {
+          throw new JsonParseException(String.format("Key `%s` is invalid", ZARR_FORMAT_KEY));
+        }
+
+        if (!obj.has(NODE_TYPE_KEY)) {
+          throw new JsonParseException(String.format("Key `%s` is missing.", NODE_TYPE_KEY));
+        }
+        if (!Objects.equals(obj.get(NODE_TYPE_KEY).getAsString(), NODE_TYPE_GROUP)) {
+          throw new JsonParseException(String.format("Key `%s` is invalid.", NODE_TYPE_KEY));
+        }
+
+        if (obj.has(attributesKey)) {
+          return new Zarr3GroupAttributes(obj.get("attributes").getAsJsonObject());
+        }
+        return new Zarr3GroupAttributes();
       } catch (Exception e) {
         return null;
       }

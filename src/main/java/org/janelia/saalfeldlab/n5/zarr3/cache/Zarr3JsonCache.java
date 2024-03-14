@@ -50,31 +50,6 @@ public class Zarr3JsonCache extends N5JsonCache {
     updateCache(normalPathKey, cacheInfo);
   }
 
-  public N5CacheInfo forceAddNewCacheInfo(final String normalPathKey, final String normalCacheKey,
-      final JsonElement uncachedAttributes,
-      final boolean isGroup, final boolean isDataset) {
-
-    // getting the current cache info is useful if it has a list of children
-    N5CacheInfo cacheInfo = getCacheInfo(normalPathKey);
-		if (cacheInfo == null || cacheInfo == emptyCacheInfo) {
-			cacheInfo = newCacheInfo();
-		}
-
-    // initialize cache keys to null, those that exist will be set later
-    // and having null's in the cache avoid backend calls for nonexisting files
-    updateCacheAttributes(cacheInfo, Zarr3KeyValueReader.ZARR_JSON_FILE, null);
-
-		if (normalCacheKey != null) {
-			updateCacheAttributes(cacheInfo, normalCacheKey, uncachedAttributes);
-		}
-
-    updateCacheIsGroup(cacheInfo, isGroup);
-    updateCacheIsDataset(cacheInfo, isDataset);
-    updateCache(normalPathKey, cacheInfo);
-
-    return cacheInfo;
-  }
-
   @Override
   public boolean isDataset(final String normalPathKey, final String normalCacheKey) {
 

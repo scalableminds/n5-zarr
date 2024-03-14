@@ -76,9 +76,6 @@ public class N5Zarr3Reader extends Zarr3KeyValueReader {
 				gsonBuilder,
 				mapN5DatasetAttributes,
 				cacheMeta);
-
-		if( !exists("/"))
-			throw new N5Exception.N5IOException("No container exists at " + basePath );
 	}
 
 	/**

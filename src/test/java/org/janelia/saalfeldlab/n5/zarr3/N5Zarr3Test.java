@@ -73,6 +73,7 @@ import org.janelia.saalfeldlab.n5.N5Exception.N5ClassCastException;
 import org.janelia.saalfeldlab.n5.N5Reader;
 import org.janelia.saalfeldlab.n5.N5Writer;
 import org.janelia.saalfeldlab.n5.imglib2.N5Utils;
+import org.janelia.saalfeldlab.n5.zarr3.ChunkGrid.RegularChunkGrid;
 import org.janelia.saalfeldlab.n5.zarr3.ChunkKeyEncoding.DefaultChunkKeyEncoding;
 import org.junit.Assert;
 import org.junit.Ignore;
@@ -338,6 +339,13 @@ public class N5Zarr3Test extends AbstractN5Test {
 
   @Override
   @Test
+  public void testVersion() throws IOException {
+    N5Writer writer = this.createN5Writer();
+    Assert.assertEquals(writer.getVersion(), Zarr3Attributes.ZARR_3);
+  }
+
+  @Override
+  @Test
   public void testListAttributes() throws IOException {
 
     final String groupName2 = groupName + "-2";
@@ -346,32 +354,33 @@ public class N5Zarr3Test extends AbstractN5Test {
     try (N5Zarr3Writer n5 = createN5Writer()) {
 
       n5.createDataset(datasetName2, dimensions, blockSize, DataType.UINT64, getCompressions()[0]);
-      n5.setAttribute(datasetName2, "attributes/attr1", new double[]{1, 2, 3});
-      n5.setAttribute(datasetName2, "attributes/attr2", new String[]{"a", "b", "c"});
-      n5.setAttribute(datasetName2, "attributes/attr3", 1.0);
-      n5.setAttribute(datasetName2, "attributes/attr4", "a");
-      n5.setAttribute(datasetName2, "attributes/attr5", 5.4);
+      n5.setAttribute(datasetName2, "attr1", new double[]{1, 2, 3});
+      n5.setAttribute(datasetName2, "attr2", new String[]{"a", "b", "c"});
+      n5.setAttribute(datasetName2, "attr3", 1.0);
+      n5.setAttribute(datasetName2, "attr4", "a");
+      n5.setAttribute(datasetName2, "attr5", 5.4);
 
-      Map<String, Class<?>> attributesMap = n5.listAttributesFlattened(datasetName2);
-      assertSame(attributesMap.get("attributes/attr1"), long[].class);
-      assertSame(attributesMap.get("attributes/attr2"), String[].class);
-      assertSame(attributesMap.get("attributes/attr3"), long.class);
-      assertSame(attributesMap.get("attributes/attr4"), String.class);
-      assertSame(attributesMap.get("attributes/attr5"), double.class);
+      Map<String, Class<?>> attributesMap = n5.listAttributes(datasetName2);
+      assertSame(attributesMap.get("attr1"), long[].class);
+      assertSame(attributesMap.get("attr1"), long[].class);
+      assertSame(attributesMap.get("attr2"), String[].class);
+      assertSame(attributesMap.get("attr3"), long.class);
+      assertSame(attributesMap.get("attr4"), String.class);
+      assertSame(attributesMap.get("attr5"), double.class);
 
       n5.createGroup(groupName2);
-      n5.setAttribute(groupName2, "attributes/attr1", new double[]{1, 2, 3});
-      n5.setAttribute(groupName2, "attributes/attr2", new String[]{"a", "b", "c"});
-      n5.setAttribute(groupName2, "attributes/attr3", 1.0);
-      n5.setAttribute(groupName2, "attributes/attr4", "a");
-      n5.setAttribute(groupName2, "attributes/attr5", 5.4);
+      n5.setAttribute(groupName2, "attr1", new double[]{1, 2, 3});
+      n5.setAttribute(groupName2, "attr2", new String[]{"a", "b", "c"});
+      n5.setAttribute(groupName2, "attr3", 1.0);
+      n5.setAttribute(groupName2, "attr4", "a");
+      n5.setAttribute(groupName2, "attr5", 5.4);
 
-      attributesMap = n5.listAttributesFlattened(datasetName2);
-      assertSame(attributesMap.get("attributes/attr1"), long[].class);
-      assertSame(attributesMap.get("attributes/attr2"), String[].class);
-      assertSame(attributesMap.get("attributes/attr3"), long.class);
-      assertSame(attributesMap.get("attributes/attr4"), String.class);
-      assertSame(attributesMap.get("attributes/attr5"), double.class);
+      attributesMap = n5.listAttributes(datasetName2);
+      assertSame(attributesMap.get("attr1"), long[].class);
+      assertSame(attributesMap.get("attr2"), String[].class);
+      assertSame(attributesMap.get("attr3"), long.class);
+      assertSame(attributesMap.get("attr4"), String.class);
+      assertSame(attributesMap.get("attr5"), double.class);
     }
   }
 
@@ -687,7 +696,7 @@ public class N5Zarr3Test extends AbstractN5Test {
       newAttributes.put("key3", "value3");
       n5.setAttributes(groupName, newAttributes);
 
-      Assert.assertEquals(2 + 3, n5.listAttributesFlattened(groupName).size());
+      Assert.assertEquals(2 + 3, n5.listAttributes(groupName).size());
       /* class interface */
       Assert.assertEquals("value1", n5.getAttribute(groupName, "key1", String.class));
       Assert.assertEquals("value2", n5.getAttribute(groupName, "key2", String.class));
@@ -710,7 +719,7 @@ public class N5Zarr3Test extends AbstractN5Test {
       n5.setAttribute(groupName, "key1", 1);
       n5.setAttribute(groupName, "key2", 2);
 
-      Assert.assertEquals(2 + 3, n5.listAttributesFlattened(groupName).size());
+      Assert.assertEquals(2 + 3, n5.listAttributes(groupName).size());
       /* class interface */
       Assert.assertEquals(Integer.valueOf(1), n5.getAttribute(groupName, "key1", Integer.class));
       Assert.assertEquals(Integer.valueOf(2), n5.getAttribute(groupName, "key2", Integer.class));
@@ -735,7 +744,7 @@ public class N5Zarr3Test extends AbstractN5Test {
       n5.removeAttribute(groupName, "key1");
       n5.removeAttribute(groupName, "key2");
       n5.removeAttribute(groupName, "key3");
-      Assert.assertEquals(2 + 0, n5.listAttributesFlattened(groupName).size());
+      Assert.assertEquals(2 + 0, n5.listAttributes(groupName).size());
     }
   }
 
@@ -747,16 +756,16 @@ public class N5Zarr3Test extends AbstractN5Test {
 
       n5.createDataset(datasetName, dimensions, blockSize, DataType.UINT64, getCompressions()[0]);
 
-      long[] dimsZarr = n5.getAttribute(datasetName, Zarr3DatasetAttributes.shapeKey, long[].class);
+      long[] dimsZarr = ((Zarr3DatasetAttributes) n5.getDatasetAttributes(datasetName)).getShape();
       long[] dimsN5 = n5.getAttribute(datasetName, DatasetAttributes.DIMENSIONS_KEY, long[].class);
       assertArrayEquals(dimsZarr, dimsN5);
 
-      int[] blkZarr = n5.getAttribute(datasetName,
-          Zarr3DatasetAttributes.chunkGridKey + "/configuration/chunk_shape", int[].class);
+      int[] blkZarr = ((RegularChunkGrid) ((Zarr3DatasetAttributes) n5.getDatasetAttributes(
+          datasetName)).getChunkGrid()).chunkShape;
       int[] blkN5 = n5.getAttribute(datasetName, DatasetAttributes.BLOCK_SIZE_KEY, int[].class);
       assertArrayEquals(blkZarr, blkN5);
 
-      String typestr = n5.getAttribute(datasetName, Zarr3DatasetAttributes.dataTypeKey, String.class);
+      String typestr = n5.getAttribute(datasetName, DatasetAttributes.DATA_TYPE_KEY, String.class);
       org.janelia.saalfeldlab.n5.zarr3.DataType dtype = new org.janelia.saalfeldlab.n5.zarr3.DataType(
           typestr);
       // read to a string because zarr may not have the N5 DataType deserializer
@@ -777,20 +786,21 @@ public class N5Zarr3Test extends AbstractN5Test {
 
       // ensure variables can be set through the n5 variables as well
       n5.setAttribute(datasetName, DatasetAttributes.DIMENSIONS_KEY, newDims);
-      dimsZarr = n5.getAttribute(datasetName, Zarr3DatasetAttributes.shapeKey, long[].class);
+      dimsZarr = ((Zarr3DatasetAttributes) n5.getDatasetAttributes(datasetName)).getShape();
       dimsN5 = n5.getAttribute(datasetName, DatasetAttributes.DIMENSIONS_KEY, long[].class);
       assertArrayEquals(newDims, dimsZarr);
       assertArrayEquals(newDims, dimsN5);
 
       n5.setAttribute(datasetName, DatasetAttributes.BLOCK_SIZE_KEY, newBlk);
-      blkZarr = n5.getAttribute(datasetName, Zarr3DatasetAttributes.shapeKey, int[].class);
+      blkZarr = ((RegularChunkGrid) ((Zarr3DatasetAttributes) n5.getDatasetAttributes(
+          datasetName)).getChunkGrid()).chunkShape;
       blkN5 = n5.getAttribute(datasetName, DatasetAttributes.BLOCK_SIZE_KEY, int[].class);
       assertArrayEquals(newBlk, blkZarr);
       assertArrayEquals(newBlk, blkN5);
 
       n5.setAttribute(datasetName, DatasetAttributes.DATA_TYPE_KEY, newDtype.toString());
 
-      typestr = n5.getAttribute(datasetName, Zarr3DatasetAttributes.dataTypeKey, String.class);
+      typestr = ((Zarr3DatasetAttributes) n5.getDatasetAttributes(datasetName)).getDType().typestr;
       dtype = new org.janelia.saalfeldlab.n5.zarr3.DataType(typestr);
       n5DataType = DataType.fromString(
           n5.getAttribute(datasetName, DatasetAttributes.DATA_TYPE_KEY, String.class));

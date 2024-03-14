@@ -20,17 +20,11 @@
  */
 package org.janelia.saalfeldlab.n5.zarr3;
 
-import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
-import com.google.gson.JsonSyntaxException;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -45,7 +39,6 @@ import net.imglib2.view.Views;
 import org.janelia.saalfeldlab.n5.BlockWriter;
 import org.janelia.saalfeldlab.n5.ByteArrayDataBlock;
 import org.janelia.saalfeldlab.n5.CachedGsonKeyValueN5Writer;
-import org.janelia.saalfeldlab.n5.Compression;
 import org.janelia.saalfeldlab.n5.DataBlock;
 import org.janelia.saalfeldlab.n5.DatasetAttributes;
 import org.janelia.saalfeldlab.n5.GsonUtils;
@@ -54,8 +47,6 @@ import org.janelia.saalfeldlab.n5.LockedChannel;
 import org.janelia.saalfeldlab.n5.N5Exception;
 import org.janelia.saalfeldlab.n5.N5Exception.N5IOException;
 import org.janelia.saalfeldlab.n5.N5URI;
-import org.janelia.saalfeldlab.n5.RawCompression;
-import org.janelia.saalfeldlab.n5.zarr3.ChunkGrid.RegularChunkGrid;
 
 /**
  * Zarr {@link KeyValueWriter} implementation.
@@ -103,18 +94,11 @@ public class Zarr3KeyValueWriter extends
         mapN5DatasetAttributes,
         cacheAttributes);
     this.chunkKeyEncoding = chunkKeyEncoding;
-    Version version = null;
     if (exists("/")) {
-      version = getVersion();
-      if (!Zarr3KeyValueReader.VERSION.isCompatible(version)) {
-        throw new N5IOException(
-            "Incompatible version " + version + " (this is " + Zarr3KeyValueReader.VERSION + ").");
+      Zarr3Attributes root = loadAttributes("/");
+      if (root == null) {
+        createGroup("/");
       }
-    }
-
-    if (version == null || version == VERSION_ZERO) {
-      createGroup("/");
-      setVersion("/");
     }
   }
 
@@ -218,104 +202,9 @@ public class Zarr3KeyValueWriter extends
     }
   }
 
-  protected static void redirectDatasetAttribute(
-      final JsonObject src,
-      final String srcKey,
-      final JsonObject dest,
-      final String destKey) {
-
-    if (src.has(srcKey)) {
-      final JsonElement e = src.get(srcKey);
-      dest.add(destKey, e);
-      src.remove(srcKey);
-    }
-  }
-
-  protected static void redirectChunkGrid(final JsonObject src, final JsonObject dest) {
-    JsonObject chunkGridConfigurationObject = new JsonObject();
-    chunkGridConfigurationObject.add("chunk_shape", src.get(DatasetAttributes.BLOCK_SIZE_KEY));
-    JsonObject chunkGridObject = new JsonObject();
-    chunkGridObject.add("name", new JsonPrimitive("regular"));
-    chunkGridObject.add("configuration", chunkGridConfigurationObject);
-    dest.add(Zarr3DatasetAttributes.chunkGridKey, chunkGridObject);
-    src.remove(DatasetAttributes.BLOCK_SIZE_KEY);
-  }
-
-  protected static void redirectDataType(final JsonObject src, final JsonObject dest) {
-
-    if (src.has(DatasetAttributes.DATA_TYPE_KEY)) {
-      final JsonElement e = src.get(DatasetAttributes.DATA_TYPE_KEY);
-      dest.addProperty(Zarr3DatasetAttributes.dataTypeKey,
-          new DataType(org.janelia.saalfeldlab.n5.DataType.fromString(e.getAsString())).toString());
-      src.remove(DatasetAttributes.DATA_TYPE_KEY);
-    }
-  }
-
-  protected static void redirectCompression(final JsonObject src, final Gson gson,
-      final JsonObject dest) {
-
-    // TODO: Codecs
-    if (src.has(DatasetAttributes.COMPRESSION_KEY)) {
-      final Compression c = gson.fromJson(src.get(DatasetAttributes.COMPRESSION_KEY),
-          Compression.class);
-      if (c.getClass() == RawCompression.class) {
-        dest.add(Zarr3DatasetAttributes.codecsKey, JsonNull.INSTANCE);
-      } else {
-        dest.add(Zarr3DatasetAttributes.codecsKey,
-            gson.toJsonTree(ZarrCodec.fromCompression(c)));
-      }
-
-      src.remove(DatasetAttributes.COMPRESSION_KEY);
-    }
-  }
-
-  static void reorder(final long[] array) {
-
-    long a;
-    final int max = array.length - 1;
-    for (int i = (max - 1) / 2; i >= 0; --i) {
-      final int j = max - i;
-      a = array[i];
-      array[i] = array[j];
-      array[j] = a;
-    }
-  }
-
-  static void reorder(final int[] array) {
-
-    int a;
-    final int max = array.length - 1;
-    for (int i = (max - 1) / 2; i >= 0; --i) {
-      final int j = max - i;
-      a = array[i];
-      array[i] = array[j];
-      array[j] = a;
-    }
-  }
-
-  static void reorder(final JsonArray array) {
-
-    JsonElement a;
-    final int max = array.size() - 1;
-    for (int i = (max - 1) / 2; i >= 0; --i) {
-      final int j = max - i;
-      a = array.get(i);
-      array.set(i, array.get(j));
-      array.set(j, a);
-    }
-  }
-
   @Override
   public void setVersion(final String path) throws N5Exception {
-    final String normalPath = N5URI.normalizeGroupPath(path);
-    if (exists(path)) {
-      final JsonObject zarrJson = getZarrJson(path).getAsJsonObject();
-      zarrJson.add(ZARR_FORMAT_KEY, new JsonPrimitive(N5Zarr3Reader.VERSION.getMajor()));
-      if (!zarrJson.has(NODE_TYPE_KEY)) {
-        zarrJson.add(NODE_TYPE_KEY, new JsonPrimitive(NODE_TYPE_GROUP));
-      }
-      writeZarrJson(normalPath, zarrJson); // updates cache
-    }
+    // Intentional no-op
   }
 
   @Override
@@ -353,18 +242,13 @@ public class Zarr3KeyValueWriter extends
     for (final String child : pathParts) {
 
       final String childPath = parent.isEmpty() ? child : parent + "/" + child;
+      storeAttributes(childPath, zarrGroupObject);
       if (cacheMeta()) {
-        // TODO: Maybe already handled by writeZarrJson?
-        getCache().initializeNonemptyCache(childPath, ZARR_JSON_FILE);
-        getCache().updateCacheInfo(childPath, ZARR_JSON_FILE, zarrGroupObject);
-
         // only add if the parent exists and has children cached already
         if (parent != null && !child.isEmpty()) {
           getCache().addChildIfPresent(parent, child);
         }
       }
-
-      writeZarrJson(childPath, zarrGroupObject);
       parent = childPath;
     }
   }
@@ -380,7 +264,7 @@ public class Zarr3KeyValueWriter extends
         return;
       } else if (getCache().isGroup(normalPath, ZARR_JSON_FILE)) {
         // TODO tests currently require that we can make a dataset on a group
-//				throw new N5Exception("Can't make a group on existing path.");
+        throw new N5Exception("Can't make a group on existing path.");
       }
     }
 
@@ -402,47 +286,13 @@ public class Zarr3KeyValueWriter extends
 
     // These three lines are preferable to setDatasetAttributes because they
     // are more efficient wrt caching
-    final Zarr3DatasetAttributes arrayAttributes = createZarr3ArrayAttributes(datasetAttributes);
-    final JsonElement attributes = gson.toJsonTree(arrayAttributes.asMap());
-    writeJsonResource(normalPath, ZARR_JSON_FILE, attributes);
+    storeAttributes(normalPath,
+        Zarr3DatasetAttributes.fromDatasetAttributes(datasetAttributes, chunkKeyEncoding)
+            .asJson(gson));
 
     if (cacheMeta()) {
       // cache dataset and add as child to parent if necessary
-      getCache().initializeNonemptyCache(normalPath, ZARR_JSON_FILE);
-      getCache().updateCacheInfo(normalPath, ZARR_JSON_FILE, attributes);
       getCache().addChildIfPresent(parent, pathParts[pathParts.length - 1]);
-    }
-  }
-
-  protected void translateN5Attributes(final Map<String, Object> attrs) {
-    if (attrs.containsKey(DatasetAttributes.COMPRESSION_KEY)) {
-      if (!attrs.containsKey(Zarr3DatasetAttributes.codecsKey)) {
-        attrs.put(Zarr3DatasetAttributes.codecsKey, attrs.get(DatasetAttributes.COMPRESSION_KEY));
-      }
-      attrs.remove(DatasetAttributes.COMPRESSION_KEY);
-    }
-
-    if (attrs.containsKey(DatasetAttributes.BLOCK_SIZE_KEY)) {
-      if (!attrs.containsKey(Zarr3DatasetAttributes.chunkGridKey)) {
-        attrs.put(Zarr3DatasetAttributes.chunkGridKey + "/configuration/chunk_shape",
-            attrs.get(DatasetAttributes.BLOCK_SIZE_KEY));
-      }
-      attrs.remove(DatasetAttributes.BLOCK_SIZE_KEY);
-    }
-
-    if (attrs.containsKey(DatasetAttributes.DIMENSIONS_KEY)) {
-      if (!attrs.containsKey(Zarr3DatasetAttributes.shapeKey)) {
-        attrs.put(Zarr3DatasetAttributes.shapeKey, attrs.get(DatasetAttributes.DIMENSIONS_KEY));
-      }
-      attrs.remove(DatasetAttributes.DIMENSIONS_KEY);
-    }
-
-    if (attrs.containsKey(DatasetAttributes.DATA_TYPE_KEY)) {
-      if (!attrs.containsKey(Zarr3DatasetAttributes.dataTypeKey)) {
-        attrs.put(Zarr3DatasetAttributes.dataTypeKey,
-            attrs.get(DatasetAttributes.DATA_TYPE_KEY));
-      }
-      attrs.remove(DatasetAttributes.DATA_TYPE_KEY);
     }
   }
 
@@ -452,61 +302,23 @@ public class Zarr3KeyValueWriter extends
       final Map<String, ?> attributes) throws N5Exception {
 
     final String normalPath = N5URI.normalizeGroupPath(path);
-    if (!exists(normalPath)) {
-      throw new N5IOException("" + normalPath + " is not a group or dataset.");
+    Zarr3Attributes newAttributes = loadAttributes(normalPath);
+    if (newAttributes == null) {
+      createGroup(normalPath);
+      newAttributes = loadAttributes(normalPath);
     }
-
-    final JsonElement existingAttributes = getAttributesUnmapped(normalPath); // uses cache
-    JsonElement newAttributes = existingAttributes != null && existingAttributes.isJsonObject()
-        ? existingAttributes.getAsJsonObject()
-        : new JsonObject();
-
-    // Move non-core attributes into "attributes" hash
-    final Map<String, Object> translatedAttributes = attributes.entrySet().stream()
-        .map(entry -> new SimpleImmutableEntry<>(translateAttributePath(entry.getKey()),
-            entry.getValue()))
-        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-    // Translate N5 attributes to Zarr attributes
-    translateN5Attributes(translatedAttributes);
-    newAttributes = GsonUtils.insertAttributes(newAttributes, translatedAttributes, gson);
-
-    if (newAttributes.isJsonObject()) {
-      writeZarrJson(normalPath, newAttributes.getAsJsonObject());// handles caching
-    } else {
-      throw new N5Exception("Attributes are not an object");
-    }
+    newAttributes = newAttributes.setAttributes(attributes, gson);
+    storeAttributes(normalPath, newAttributes.asJson(gson));// handles caching
   }
 
   @Override
   public boolean removeAttribute(final String pathName, final String key) throws N5Exception {
 
     final String normalPath = N5URI.normalizeGroupPath(pathName);
-    final String normalKey = N5URI.normalizeAttributePath(key);
-    if (!keyValueAccess.exists(keyValueAccess.compose(uri, normalPath, ZARR_JSON_FILE))) {
-      return false;
-    }
-
-    final JsonElement attributes = getAttributesUnmapped(normalPath); // uses cache
-    final JsonElement userAttributes = attributes.getAsJsonObject().get("attributes");
-
-    if (key.equals("/")) {
-      attributes.getAsJsonObject().add("attributes", new JsonObject());
-      writeJsonResource(normalPath, ZARR_JSON_FILE, attributes);
-      if (cacheMeta()) {
-        cache.updateCacheInfo(normalPath, ZARR_JSON_FILE, attributes);
-      }
-
-      return true;
-    } else if (GsonUtils.removeAttribute(userAttributes, normalKey) != null) {
-
-      if (cacheMeta()) {
-        cache.updateCacheInfo(normalPath, ZARR_JSON_FILE, attributes);
-      }
-
-      writeJsonResource(normalPath, ZARR_JSON_FILE, attributes);
-      return true;
-    }
-    return false;
+    Zarr3Attributes currentAttributes = loadAttributes(normalPath);
+    final boolean keyExists = currentAttributes.getAttribute(key, gson) != JsonNull.INSTANCE;
+    storeAttributes(normalPath, currentAttributes.removeAttribute(key, gson).asJson(gson));
+    return keyExists;
   }
 
   @Override
@@ -516,21 +328,10 @@ public class Zarr3KeyValueWriter extends
     final String normalPath = N5URI.normalizeGroupPath(pathName);
     final String normalKey = N5URI.normalizeAttributePath(key);
 
-    final JsonElement attributes = getAttributesUnmapped(normalPath); // uses cache
-    final JsonElement userAttributes = attributes.getAsJsonObject().get("attributes");
-    final T obj;
-    try {
-      obj = GsonUtils.removeAttribute(userAttributes, normalKey, cls, gson);
-    } catch (JsonSyntaxException | NumberFormatException | ClassCastException e) {
-      throw new N5Exception.N5ClassCastException(e);
-    }
-    if (obj != null) {
-      if (cacheMeta()) {
-        cache.updateCacheInfo(normalPath, ZARR_JSON_FILE, attributes);
-      }
-
-      writeJsonResource(normalPath, ZARR_JSON_FILE, attributes);
-    }
+    Zarr3Attributes currentAttributes = loadAttributes(normalPath);
+    final T obj = currentAttributes.getAttribute(key, gson, cls);
+    Zarr3Attributes newAttributes = currentAttributes.removeAttribute(normalKey, gson);
+    storeAttributes(normalPath, newAttributes.asJson(gson)); // handles caching
     return obj;
   }
 
@@ -539,80 +340,29 @@ public class Zarr3KeyValueWriter extends
       final String pathName,
       final DatasetAttributes datasetAttributes) throws N5Exception {
 
-    setZarr3ArrayAttributes(pathName, createZarr3ArrayAttributes(datasetAttributes));
+    storeAttributes(pathName,
+        Zarr3DatasetAttributes.fromDatasetAttributes(datasetAttributes, chunkKeyEncoding)
+            .asJson(gson));
   }
 
-  protected Zarr3DatasetAttributes createZarr3ArrayAttributes(
-      final DatasetAttributes datasetAttributes) {
-
-    final long[] shape = datasetAttributes.getDimensions().clone();
-    final RegularChunkGrid chunkGrid = new RegularChunkGrid(
-        datasetAttributes.getBlockSize().clone());
-    final DataType dataType = new DataType(datasetAttributes.getDataType());
-
-    final Zarr3DatasetAttributes zArrayAttributes = new Zarr3DatasetAttributes(
-        shape,
-        dataType,
-        chunkGrid,
-        chunkKeyEncoding,
-        Zarr3CodecPipeline.guessCompression(datasetAttributes.getCompression()),
-        dataType.defaultFillValue(), new JsonObject());
-
-    return zArrayAttributes;
-  }
-
-  /**
-   * Write the contents of the attributes argument to the .zarray file at the given pathName.
-   * Overwrites and existing .zarray.
-   *
-   * @param pathName   the group / dataset path
-   * @param attributes ZArray attributes
-   * @throws N5Exception the exception
-   */
-  public void setZarr3ArrayAttributes(final String pathName, final Zarr3DatasetAttributes attributes)
-      throws N5Exception {
-
-    writeZarrJson(pathName, gson.toJsonTree(attributes.asMap()));
-  }
-
-  protected void deleteJsonResource(final String normalPath, final String jsonName)
-      throws N5Exception {
-    final String absolutePath = keyValueAccess.compose(uri, normalPath, jsonName);
-    try {
-      keyValueAccess.delete(absolutePath);
-    } catch (final Throwable e1) {
-      throw new N5IOException("Failed to delete " + absolutePath, e1);
-    }
-  }
-
-  protected void writeJsonResource(
+  protected void storeAttributes(
       final String normalPath,
-      final String jsonName,
-      final JsonElement attributes) throws N5Exception {
-
-    if (attributes == null) {
-      return;
-    }
-
-    final String absolutePath = keyValueAccess.compose(uri, normalPath, jsonName);
-    try (final LockedChannel lock = keyValueAccess.lockForWriting(absolutePath)) {
-      GsonUtils.writeAttributes(lock.newWriter(), attributes, gson);
-    } catch (final Throwable e) {
-      throw new N5IOException("Failed to write " + absolutePath, e);
-    }
-  }
-
-  protected void writeZarrJson(
-      final String normalGroupPath,
       final JsonElement zarrJsonObject) throws N5Exception {
 
     if (zarrJsonObject == null) {
       return;
     }
 
-    writeJsonResource(normalGroupPath, ZARR_JSON_FILE, zarrJsonObject);
+    final String absolutePath = keyValueAccess.compose(uri, normalPath, ZARR_JSON_FILE);
+    try (final LockedChannel lock = keyValueAccess.lockForWriting(absolutePath)) {
+      GsonUtils.writeAttributes(lock.newWriter(), zarrJsonObject, gson);
+    } catch (final Throwable e) {
+      throw new N5IOException("Failed to write " + absolutePath, e);
+    }
+
     if (cacheMeta()) {
-      cache.updateCacheInfo(normalGroupPath, ZARR_JSON_FILE, zarrJsonObject);
+      cache.initializeNonemptyCache(normalPath, ZARR_JSON_FILE);
+      cache.updateCacheInfo(normalPath, ZARR_JSON_FILE, zarrJsonObject);
     }
   }
 
