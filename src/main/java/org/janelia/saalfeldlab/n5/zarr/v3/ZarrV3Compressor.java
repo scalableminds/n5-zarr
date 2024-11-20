@@ -103,13 +103,15 @@ public interface ZarrV3Compressor extends Codec.BytesCodec {
 
     public Compression getCompression();
 
+	@NameConfig.Name(Zstandard.ID)
 	public static class Zstandard implements ZarrV3Compressor {
-
-		// TODO implement get type
-
 		@SuppressWarnings("unused")
-		private final String id = "zstd";
+		private final static String ID = "zstd";
+
+		//TODO: are this the correct configuration parameter names according to zarrv3 standard names?
+		@NameConfig.Parameter
 		private final int level;
+
 		private final transient int nbWorkers;
 
 		public Zstandard(int level) {
@@ -134,18 +136,17 @@ public interface ZarrV3Compressor extends Codec.BytesCodec {
 			return compression;
 		}
 
-		@Override
-		public String getType() {
-			return id;
-		}
+    @Override
+    public String getType() {
+      return ID;
+    }
+  }
 
-	}
-
-	@NameConfig.Name("blosc")
+  @NameConfig.Name(Blosc.ID)
 	public static class Blosc implements ZarrV3Compressor {
 
 		@SuppressWarnings("unused")
-		private final String id = "blosc";
+		private final static String ID = "blosc";
 
 		@NameConfig.Parameter
 		private final String cname;
@@ -248,7 +249,7 @@ public interface ZarrV3Compressor extends Codec.BytesCodec {
 
 		@Override
 		public String getType() {
-			return id;
+			return ID;
 		}
 	}
 
@@ -256,13 +257,14 @@ public interface ZarrV3Compressor extends Codec.BytesCodec {
   public static class Gzip implements ZarrV3Compressor {
 
 		@SuppressWarnings("unused")
-		private final String id = "gzip";
+		private final static String ID = "gzip";
+
+    @NameConfig.Parameter
 		private final int level;
 
-		public Gzip(final int level) {
-
-			this.level = level;
-		}
+    public Gzip(final int level) {
+      this.level = level;
+    }
 
 		public Gzip(final GzipCompression compression)
 				throws NoSuchFieldException, SecurityException, IllegalArgumentException, IllegalAccessException {
@@ -278,12 +280,12 @@ public interface ZarrV3Compressor extends Codec.BytesCodec {
 		@Override
 		public GzipCompression getCompression() {
 
-			return new GzipCompression(level);
-		}
+      return new GzipCompression(level);
+    }
 
-		@Override
+  @Override
 		public String getType() {
-			return id;
+			return ID;
 		}
 	}
 
