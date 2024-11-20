@@ -70,8 +70,7 @@ public interface ZarrV3Compressor extends Codec.BytesCodec {
 	 */
 	public static Map<String, Class<? extends ZarrV3Compressor>> registry = Stream
 			.of(new SimpleImmutableEntry<>("zstd", Zstandard.class), new SimpleImmutableEntry<>("blosc", Blosc.class),
-					new SimpleImmutableEntry<>("zlib", Zlib.class), new SimpleImmutableEntry<>("gzip", Gzip.class),
-					new SimpleImmutableEntry<>("bz2", Bz2.class))
+					new SimpleImmutableEntry<>("gzip", Gzip.class))
 			.collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
 	public static ZarrV3Compressor fromCompression(final Compression compression) {
@@ -80,15 +79,7 @@ public interface ZarrV3Compressor extends Codec.BytesCodec {
 			if (compression instanceof BloscCompression) {
 				return new Blosc((BloscCompression) compression);
 			} else if (compression instanceof GzipCompression) {
-				final Class<? extends Compression> clazz = compression.getClass();
-				final Field field = clazz.getDeclaredField("useZlib");
-				field.setAccessible(true);
-				final Boolean useZlib = (Boolean) field.get(compression);
-				field.setAccessible(false);
-				return useZlib != null && useZlib ? new Zlib((GzipCompression) compression)
-						: new Gzip((GzipCompression) compression);
-			} else if (compression instanceof Bzip2Compression) {
-				return new Bz2((Bzip2Compression) compression);
+				return new Gzip((GzipCompression) compression);
 			} else if (compression instanceof ZstandardCompression) {
 				return new Zstandard((ZstandardCompression) compression);
 			} else
@@ -261,41 +252,8 @@ public interface ZarrV3Compressor extends Codec.BytesCodec {
 		}
 	}
 
-	public static class Zlib implements ZarrV3Compressor {
-
-		@SuppressWarnings("unused")
-		private final String id = "zlib";
-		private final int level;
-
-		public Zlib(final int level) {
-
-			this.level = level;
-		}
-
-		public Zlib(final GzipCompression compression)
-				throws NoSuchFieldException, SecurityException, IllegalArgumentException, IllegalAccessException {
-
-			final Class<? extends GzipCompression> clazz = compression.getClass();
-
-			final Field field = clazz.getDeclaredField("level");
-			field.setAccessible(true);
-			level = field.getInt(compression);
-			field.setAccessible(false);
-		}
-
-		@Override
-		public GzipCompression getCompression() {
-
-			return new GzipCompression(level, true);
-		}
-
-		@Override
-		public String getType() {
-			return id;
-		}
-	}
-
-	public static class Gzip implements ZarrV3Compressor {
+	@NameConfig.Name(Gzip.ID)
+  public static class Gzip implements ZarrV3Compressor {
 
 		@SuppressWarnings("unused")
 		private final String id = "gzip";
@@ -321,40 +279,6 @@ public interface ZarrV3Compressor extends Codec.BytesCodec {
 		public GzipCompression getCompression() {
 
 			return new GzipCompression(level);
-		}
-
-		@Override
-		public String getType() {
-			return id;
-		}
-	}
-
-	public static class Bz2 implements ZarrV3Compressor {
-
-		@SuppressWarnings("unused")
-		private final String id = "bz2";
-		private final int level;
-
-		public Bz2(final int level) {
-
-			this.level = level;
-		}
-
-		public Bz2(final Bzip2Compression compression)
-				throws NoSuchFieldException, SecurityException, IllegalArgumentException, IllegalAccessException {
-
-			final Class<? extends Bzip2Compression> clazz = compression.getClass();
-
-			final Field field = clazz.getDeclaredField("blockSize");
-			field.setAccessible(true);
-			level = field.getInt(compression);
-			field.setAccessible(false);
-		}
-
-		@Override
-		public Bzip2Compression getCompression() {
-
-			return new Bzip2Compression(level);
 		}
 
 		@Override
