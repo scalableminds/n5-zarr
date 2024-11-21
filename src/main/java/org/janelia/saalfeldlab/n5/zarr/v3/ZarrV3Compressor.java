@@ -101,34 +101,38 @@ public interface ZarrV3Compressor extends Codec.BytesCodec {
 
 	@NameConfig.Name(Zstandard.ID)
 	public static class Zstandard implements ZarrV3Compressor {
+
 		@SuppressWarnings("unused")
 		private final static String ID = "zstd";
 
-		//TODO: are this the correct configuration parameter names according to zarrv3 standard names?
 		@NameConfig.Parameter
 		private final int level;
-
+		@NameConfig.Parameter
+		private final boolean checksum;
 		private final transient int nbWorkers;
 
-		public Zstandard(int level) {
-			this(level, 0);
+		public Zstandard() {
+			this(5, true);
 		}
 
-		public Zstandard(int level, int nbWorkers) {
+		public Zstandard(int level, boolean checksum) {
 			this.level = level;
-			this.nbWorkers = nbWorkers;
+			this.checksum = checksum;
+			this.nbWorkers = 1;
 		}
 
 		public Zstandard(ZstandardCompression compression) {
 			this.level = compression.getLevel();
+			this.checksum = compression.isUseChecksums();
 			this.nbWorkers = compression.getNbWorkers();
 		}
 
 		@Override
 		public Compression getCompression() {
 			final ZstandardCompression compression = new ZstandardCompression(level);
-			if (this.nbWorkers != 0)
+			if(this.nbWorkers != 0)
 				compression.setNbWorkers(this.nbWorkers);
+			compression.setUseChecksums( checksum );
 			return compression;
 		}
 
